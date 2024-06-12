@@ -49,14 +49,21 @@ class Tracker:
         self.track_id = 0
         self.tracks = []
 
-    def update(self, detections, frame_size):
+    def update(self, detections, frame_size, checkpoint1_finished=False):
+        
+        print(f"Update called with {len(detections)} detections and checkpoint1_finished={checkpoint1_finished}")
+        if checkpoint1_finished :
+            # Remove tracks with track_id 'A' or 'B'
+            self.tracks = [t for t in self.tracks if t["track_id"] not in ['A', 'B']]
+            
         # Predict the current state with the Kalman Filter
         if len(self.tracks) > 0:
             for track in self.tracks:
                 track["mean"], track["covariance"] = self.shared_kalman.predict(track["mean"], track["covariance"])
 
         matched, unmatched_detections, unmatched_tracks = self.match_tracks(detections, frame_size)
-
+        print(f"Matched: {matched}, Unmatched detections: {unmatched_detections}, Unmatched tracks: {unmatched_tracks}")
+        
         # Update matched tracks with new detections
         for track_idx, detection_idx in matched:
             track = self.tracks[track_idx]
@@ -68,20 +75,43 @@ class Tracker:
             track["state"] = "confirmed" if track["hits"] >= self.min_hits else "tentative"
             track["det"] = detection
 
-        # Create new tracks for unmatched detections
-        for idx in unmatched_detections:
-            detection = detections[idx]
-            mean, covariance = self.shared_kalman.initiate(detection[:4])
-            self.tracks.append({
-                "mean": mean,
-                "covariance": covariance,
-                "track_id": self.track_id,
-                "hits": 1,
-                "age": 0,
-                "state": "tentative",
-                "det": detection
-            })
-            self.track_id += 1
+        if checkpoint1_finished is False:
+            self.track_id = 'A'
+            # Create new tracks for unmatched detections
+            for idx in unmatched_detections:
+                detection = detections[idx]
+                if detection[4] != 0:
+                    break
+                mean, covariance = self.shared_kalman.initiate(detection[:4])
+                self.tracks.append({
+                    "mean": mean,
+                    "covariance": covariance,
+                    "track_id": self.track_id,
+                    "hits": 1,
+                    "age": 0,
+                    "state": "tentative",
+                    "det": detection
+                })
+                #print(f"self.track_id = {self.track_id}")
+                self.track_id = 'B'
+                
+        else :
+            self.track_id = 0
+            
+            # Create new tracks for unmatched detections
+            for idx in unmatched_detections:
+                detection = detections[idx]
+                mean, covariance = self.shared_kalman.initiate(detection[:4])
+                self.tracks.append({
+                    "mean": mean,
+                    "covariance": covariance,
+                    "track_id": self.track_id,
+                    "hits": 1,
+                    "age": 0,
+                    "state": "tentative",
+                    "det": detection
+                })
+                self.track_id += 1
 
         # Mark unmatched tracks as 'deleted' if they exceed max_age
         for track_idx in unmatched_tracks:
@@ -92,9 +122,14 @@ class Tracker:
 
         # Remove deleted tracks
         self.tracks = [t for t in self.tracks if t["state"] != "deleted"]
-
+        
+        for t in self.tracks :
+            track_id = t["track_id"]
+            print(f"self.track_id = {track_id}")
+        
         confirmed_tracks = [np.append(t["det"], [t["track_id"]]) for t in self.tracks if t["state"] == "confirmed"]
-
+        print(f"Confirmed tracks: {confirmed_tracks}")
+        
         return np.array(confirmed_tracks)
 
     def match_tracks(self, detections, frame_size):
@@ -193,5 +228,50 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
 
+def test_tracker_update():
+    # Initialize the Tracker
+    tracker = Tracker()
+    
+    for _ in range(3):
+        # Simulated detections
+        detections = np.array([
+            [100, 100, 150, 150, 0, 110, 110, 140, 140, 130, 130, 120, 120],  # Detection 1 tag 0
+            [200, 200, 250, 250, 0, 210, 210, 240, 240, 230, 230, 220, 220],   # Detection 2 tag 0
+            [300, 300, 350, 350, 1, 310, 310, 340, 340, 330, 330, 320, 320],  # Detection 3
+            [400, 400, 450, 450, 2, 410, 410, 440, 440, 430, 430, 420, 420]   # Detection 4
+        ])
+        frame_size = (480, 640)  # Example frame size
+
+        # Run update with checkpoint1_finished = False
+        confirmed_tracks = tracker.update(detections, frame_size, checkpoint1_finished=False)
+        print()
+    
+    # Check if track IDs are 'A' or 'B'
+    assert confirmed_tracks[0][-1] == 'A', f"Expected 'A', got {confirmed_tracks[0][-1]}"
+    assert confirmed_tracks[1][-1] == 'B', f"Expected 'B', got {confirmed_tracks[1][-1]}"
+    print("Test passed for checkpoint1_finished = False")
+    print()
+    
+
+    for _ in range(3):
+        # Simulate new detections for checkpoint1_finished = True
+        new_detections = np.array([
+            #[100, 100, 150, 150, 0, 110, 110, 140, 140, 130, 130, 120, 120],  # Detection 1 tag 0
+            [300, 300, 350, 350, 1, 310, 310, 340, 340, 330, 330, 320, 320],  # Detection 3
+            [400, 400, 450, 450, 2, 410, 410, 440, 440, 430, 430, 420, 420]   # Detection 4
+        ])
+        frame_size = (480, 640)
+        
+        # Run update with checkpoint1_finished = True
+        confirmed_tracks = tracker.update(new_detections, frame_size, checkpoint1_finished=True)
+        print()
+
+    # Check if track IDs are incremental integers starting from 0
+    assert confirmed_tracks[0][-1] == 0, f"Expected 0, got {confirmed_tracks[0][-1]}"
+    assert confirmed_tracks[1][-1] == 1, f"Expected 1, got {confirmed_tracks[1][-1]}"
+    print("Test passed for checkpoint1_finished = True")
+    print()
+    
 if __name__ == "__main__":
-    main()
+    #main()
+    test_tracker_update()
