@@ -7,11 +7,58 @@ import requests
 from typing import List
 from Tracker import Tracker  # Assuming this module contains the Tracker class and helper functions
 from pid import Controller
+from pupil_apriltags import Detector
 
 from tellosrc.base import ResourceThread, StoppableThread
 from tellosrc.receivers.detection import DetectionReceiver
 from tellosrc.receivers.image import ImageReceiver
 from tellosrc.receivers.state import StateReceiver
+
+def estimate_camera_pose(frame):
+    detector = Detector(families='tag36h11')
+    fx = 313.34733040918235
+    fy = 296.949736955647
+    cx = 437.5629229985855
+    cy = 421.367285388061
+    camera_matrix = np.array([
+        [fx, 0, cx],
+        [0, fy, cy],
+        [0, 0, 1]
+    ])
+    
+    dist_coeffs = np.array([
+    0.40408531, -1.78957082, 0.02626639, 0.01158871, 4.15482281
+    ])
+    
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    tags = detector.detect(gray_frame)
+    if not tags:
+        return None, None
+
+    tag = tags[0]
+    corners = tag.corners
+
+    # Define the 3D coordinates of the tag corners in the tag's coordinate system
+    tag_size = 0.1  # meters
+    object_points = np.array([
+        [-tag_size / 2, -tag_size / 2, 0],
+        [tag_size / 2, -tag_size / 2, 0],
+        [tag_size / 2, tag_size / 2, 0],
+        [-tag_size / 2, tag_size / 2, 0]
+    ])
+
+    # The corresponding 2D points in the image
+    image_points = np.array(corners)
+
+    # Solve for the camera pose
+    success, rotation_vector, translation_vector = cv2.solvePnP(object_points, image_points, camera_matrix, dist_coeffs)
+    if not success:
+        return None, None
+
+    # Convert rotation vector to rotation matrix
+    rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+
+    return translation_vector, rotation_matrix
 
 class Task1:
     def __init__(self, drone):
@@ -127,7 +174,8 @@ class Task1:
         return False  # Returning False until task is finished
             
 class Task2(StoppableThread):
-    def __init__(self, drone, detector_url, tolerance_x=50, tolerance_y=50, tolerance_z=0.1):
+    def __init__(self, drone, detector_url, x_target, y_target, z_target,
+                 tolerance_x=50, tolerance_y=50, tolerance_z=0.1):
         super().__init__()
         self.img_size = 416       # Adjust as needed
         self.conf_threshold = 0.5 # Adjust as needed
@@ -144,6 +192,9 @@ class Task2(StoppableThread):
         
         self.drone = drone
         self.detector_url = detector_url
+        self.x_target = x_target
+        self.y_target = y_target
+        self.z_target = z_target
         self.tolerance_x = tolerance_x
         self.tolerance_y = tolerance_y
         self.tolerance_z = tolerance_z
@@ -167,14 +218,12 @@ class Task2(StoppableThread):
         pitch = np.arctan2(sin_pitch, cos_pitch)
         return pitch
 
-    def match_landing_target(self, frame, x, y, z, yaw):
-        frame_center_x = frame.shape[1] / 2
-        frame_center_y = frame.shape[0] / 2
-        # Check if the drone is within the tolerance range of the target position and orientation
-        return abs(x - self.x_target) < self.tolerance_x and \
-               abs(y - self.y_target) < self.tolerance_y and \
-               abs(z - self.z_target) < self.tolerance_z and \
-               abs(yaw) < 5  # Assuming yaw tolerance is 5 degrees
+    def calculate_errors(self, current_pose, target_pose):
+        x_error = target_pose['x'] - current_pose['x']
+        y_error = target_pose['y'] - current_pose['y']
+        z_error = target_pose['z'] - current_pose['z']
+        yaw_error = target_pose['yaw'] - current_pose['yaw']
+        return x_error, y_error, z_error, yaw_error
 
     def extract_and_match_tag(self, tag_info: List[np.ndarray], target_tag_id: int):
         is_finish = False
@@ -189,27 +238,36 @@ class Task2(StoppableThread):
             x, y, z = target_tag[7:10] * 100
             yaw = self.get_pitch(R)
             yaw = math.degrees(yaw)
-            frame = self.drone.get_frame_read().frame
+
+            current_pose = {
+                'x': x,
+                'y': y,
+                'z': z,
+                'yaw': yaw
+            }
+
+            target_pose = {
+                'x': self.x_target,  # Target x position in meters relative to the tag
+                'y': self.y_target,  # Target y position in meters relative to the tag
+                'z': self.z_target,  # Target z position in meters (desired distance from the tag)
+                'yaw': 0.0  # Target yaw in degrees
+            }
+
+            x_error, y_error, z_error, yaw_error = self.calculate_errors(current_pose, target_pose)
             
-            
-            if self.match_landing_target(frame, x, y, z, yaw):
+            if abs(x_error) < self.tolerance_x and abs(y_error) < self.tolerance_y and abs(z_error) < self.tolerance_z:
                 is_finish = True
                 self.drone.send_rc_control(0, 0, 0, 0)
             else:
                 current_time = time.time()
                 dt = current_time - self.last_time
                 self.last_time = current_time
-                x_error = x - self.x_target
-                y_error = y - self.y_target
-                z_error = z - self.z_target
-                yaw_error = yaw
                 self.controller.update(self.drone, x_error, y_error, z_error, yaw_error, dt)
         else:
             self.drone.send_rc_control(0, 0, 0, 0)
         return is_finish
 
     def run(self, frame, tag_list):
-        
         prev_id = None
         while not self.stopped():
             id, detection = self.detection_receiver.get_result()
@@ -245,6 +303,7 @@ class Task2(StoppableThread):
                 print("No target tag ID determined.")
                 return False
         
+            frame = self.drone.get_frame_read().frame
             frame_size = frame.shape[:2]
             detections = []
 
