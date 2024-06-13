@@ -21,4 +21,6 @@ class Controller:
         control_yaw = self.pid_yaw(yaw_error, dt)
 
         # Send control commands to the drone
+        print(f"PID try to  send ({int(control_x), int(control_z), int(control_y), int(control_yaw)}) to drone")
         drone.send_rc_control(int(control_x), int(control_z), int(control_y), int(control_yaw))
+        print(f"PID already send ({int(control_x), int(control_z), int(control_y), int(control_yaw)}) to drone")
