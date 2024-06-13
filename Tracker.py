@@ -62,7 +62,7 @@ class Tracker:
                 track["mean"], track["covariance"] = self.shared_kalman.predict(track["mean"], track["covariance"])
 
         matched, unmatched_detections, unmatched_tracks = self.match_tracks(detections, frame_size)
-        print(f"Matched: {matched}, Unmatched detections: {unmatched_detections}, Unmatched tracks: {unmatched_tracks}")
+        #print(f"Matched: {matched}, Unmatched detections: {unmatched_detections}, Unmatched tracks: {unmatched_tracks}")
         
         # Update matched tracks with new detections
         for track_idx, detection_idx in matched:
@@ -75,43 +75,24 @@ class Tracker:
             track["state"] = "confirmed" if track["hits"] >= self.min_hits else "tentative"
             track["det"] = detection
 
-        if checkpoint1_finished is False:
-            self.track_id = 'A'
-            # Create new tracks for unmatched detections
-            for idx in unmatched_detections:
-                detection = detections[idx]
-                if detection[4] != 0:
-                    break
-                mean, covariance = self.shared_kalman.initiate(detection[:4])
-                self.tracks.append({
-                    "mean": mean,
-                    "covariance": covariance,
-                    "track_id": self.track_id,
-                    "hits": 1,
-                    "age": 0,
-                    "state": "tentative",
-                    "det": detection
-                })
-                #print(f"self.track_id = {self.track_id}")
-                self.track_id = 'B'
-                
-        else :
-            self.track_id = 0
-            
-            # Create new tracks for unmatched detections
-            for idx in unmatched_detections:
-                detection = detections[idx]
-                mean, covariance = self.shared_kalman.initiate(detection[:4])
-                self.tracks.append({
-                    "mean": mean,
-                    "covariance": covariance,
-                    "track_id": self.track_id,
-                    "hits": 1,
-                    "age": 0,
-                    "state": "tentative",
-                    "det": detection
-                })
+        for idx in unmatched_detections:
+            detection = detections[idx]
+            mean, covariance = self.shared_kalman.initiate(detection[:4])
+            if detection[4] == 0 and not checkpoint1_finished:
+                track_id = 'A' if not any(t["track_id"] == 'A' for t in self.tracks) else 'B'
+            else:
+                track_id = self.track_id
                 self.track_id += 1
+
+            self.tracks.append({
+                "mean": mean,
+                "covariance": covariance,
+                "track_id": track_id,
+                "hits": 1,
+                "age": 0,
+                "state": "tentative",
+                "det": detection
+            })
 
         # Mark unmatched tracks as 'deleted' if they exceed max_age
         for track_idx in unmatched_tracks:
@@ -125,10 +106,10 @@ class Tracker:
         
         for t in self.tracks :
             track_id = t["track_id"]
-            print(f"self.track_id = {track_id}")
+            #print(f"self.track_id = {track_id}")
         
         confirmed_tracks = [np.append(t["det"], [t["track_id"]]) for t in self.tracks if t["state"] == "confirmed"]
-        print(f"Confirmed tracks: {confirmed_tracks}")
+        #print(f"Confirmed tracks: {confirmed_tracks}")
         
         return np.array(confirmed_tracks)
 
