@@ -70,6 +70,7 @@ class Task1:
         self.left_track_id = None
         self.right_track_id = None
         self.initialized = False
+        self.checkpoint1_finished = False
         self.controller = Controller(1.0, 0.0, 0.1)  # Initialize PID controller with some gains
         self.last_time = time.time()
         self.tolerance_x = 20
@@ -79,7 +80,8 @@ class Task1:
     def initialize_tags(self, confirmed_tracks, frame_width):
         # Initialize left and right tracks based on initial positions
         for track in confirmed_tracks:
-            x_min, y_min, x_max, y_max, tag_id, corner1_x, corner1_y, corner2_x, corner2_y, corner3_x, corner3_y, corner4_x, track_id = map(int, track)
+            x_min, y_min, x_max, y_max, tag_id, corner1_x, corner1_y, corner2_x, corner2_y, corner3_x, corner3_y, corner4_x, corner4_y, track_id = track
+            x_min, y_min, x_max, y_max, tag_id = map(int, [x_min, y_min, x_max, y_max, tag_id])
             if tag_id == 0:
                 centroid_x = (x_min + x_max) / 2
                 if centroid_x < frame_width / 2:
@@ -132,26 +134,33 @@ class Task1:
         # Determine gate position based on side
         if gate_side == 'left':
             gate_tag_id = 1
+            print("move_to_gate send command -- left 30")
             self.drone.move_left(30)  # Move left by 30
             time.sleep(3)  # Adjust the sleep time as needed to achieve the desired movement
-            self.drone.move_forward(30)  # Move forward by 40
+            print("move_to_gate send command -- forward 30")
+            self.drone.move_forward(20)  # Move forward by 20
+            print("move_to_gate send command -- wait PID")
             self.find_gate(gate_side, gate_tag_id)
             time.sleep(1)
             self.drone.send_rc_control(0,0,0,0)
+            print("move_to_gate send command -- forward 40")
             self.drone.move_forward(40)  # Move forward by 40
         else:
             gate_tag_id = 2
+            print("move_to_gate send command -- right 30")
             self.drone.move_right(30)  # Move left by 30
             time.sleep(3)  # Adjust the sleep time as needed to achieve the desired movement
-            self.drone.move_forward(30)
+            print("move_to_gate send command -- forward 30")
+            self.drone.move_forward(20)
+            print("move_to_gate send command -- wait PID")
             self.find_gate(gate_side, gate_tag_id)
             time.sleep(1)
             self.drone.send_rc_control(0,0,0,0)
-            self.drone.move_forward(80)  # Move forward by 80
+            print("move_to_gate send command -- forward 40")
+            self.drone.move_forward(40)  # Move forward by 80
 
     def run(self, tag_list, frame):
         self.tag_list = tag_list
-        self.checkpoint1_finished = False
         frame_size = frame.shape[:2]
         frame_width = frame_size[1]
         detections = []
@@ -172,12 +181,14 @@ class Task1:
             self.initialize_tags(confirmed_tracks, frame_width)
 
         for track in confirmed_tracks:
-            x_min, y_min, x_max, y_max, tag_id, _, _, _, _, _, _, _, _, track_id = map(int, track)
-            print(f"------------- track_id = {track_id} -------------")
+            x_min, y_min, x_max, y_max, tag_id, _, _, _, _, _, _, _, _, track_id = track
+            x_min, y_min, x_max, y_max, tag_id = map(int, [x_min, y_min, x_max, y_max, tag_id])
             if track_id == self.left_track_id:
                 self.left_tag_seen_count += 1
+                print(f"------------- left track seen count = {self.left_tag_seen_count} -------------")
             elif track_id == self.right_track_id:
                 self.right_tag_seen_count += 1 
+                print(f"------------- right track seen count = {self.right_tag_seen_count} -------------")
                 
             # Draw bounding box at tag 0, 1, 2
             cv2.putText(frame, f"track ID: {track_id}", (x_min, y_min - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
@@ -186,11 +197,12 @@ class Task1:
 
         # Determine which gate to go through
         self.LR_diff = self.left_tag_seen_count - self.right_tag_seen_count
-        if self.LR_diff > 10:  # If left tag not seen for 3 seconds
+        print(f"  L-R diff = {self.LR_diff} times")
+        if self.LR_diff < -10:  # If left tag not seen for 10 time
             print("Left tag lost, going through the right gate")
             self.checkpoint1_finished = True
             self.move_to_gate('right')
-        elif self.LR_diff > 10:  # If right tag not seen for 3 seconds
+        elif self.LR_diff > 10:  # If right tag not seen for 10 time
             print("Right tag lost, going through the left gate")
             self.checkpoint1_finished = True
             self.move_to_gate('left')
@@ -198,10 +210,10 @@ class Task1:
             print("Both tags in sight or none, hovering in place")
             self.drone.send_rc_control(0, 0, 0, 0)  # Hover in place
 
-        return False  # Returning False until task is finished
+        return False  # Returning False until task1 is finished
             
 class Task2(StoppableThread):
-    def __init__(self, drone, detector_url):
+    def __init__(self, drone):
         super().__init__()
         self.img_size = 416       # Adjust as needed
         self.conf_threshold = 0.5 # Adjust as needed
@@ -218,7 +230,7 @@ class Task2(StoppableThread):
         )
         
         self.drone = drone
-        self.detector_url = detector_url
+        self.detector_url = None
         self.tracker = Tracker()
         self.target_tag_id = None
         self.controller = Controller(1.0, 0.0, 0.1)  # Initialize PID controller with some gains
