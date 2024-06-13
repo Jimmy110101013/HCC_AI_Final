@@ -54,10 +54,6 @@ def keyboard(drone, key):
         print(emergency)
 
 def main():
-    # Example path, modify according to your actual path
-    dll_path = r"C:\Users\USER\anaconda3\envs\HCC_UAV\lib\site-packages\pupil_apriltags\lib\apriltag.dll"
-    ctypes.CDLL(dll_path, winmode=0)
-    detector = Detector(families="tag36h11")
 
     drone = Tello()
     drone.connect()
@@ -66,14 +62,14 @@ def main():
     drone.takeoff()
     drone.move_up(50)
 
-    #detector = Detector(families="tag36h11")
+    detector = Detector(families="tag36h11")
     #calibration = cv2.FileStorage("./test.xml", cv2.FileStorage_READ)
     
     camera_params = [313.34733040918235, 296.949736955647, 437.5629229985855, 421.367285388061]
 
     task1 = Task1(drone)
     task1_finished = False
-    task2 = Task2(drone, x_target=1.5, y_target=-5, z_target=40)
+    task2 = Task2(drone)
     task2_finished = False
 
     while True:
