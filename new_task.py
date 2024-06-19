@@ -305,7 +305,17 @@ class Task2(StoppableThread):
                         ]
                     )
                 )
-                
+                # Draw rectangle around the detected object
+                top_left = (int(x - w / 2), int(y - h / 2))
+                bottom_right = (int(x + w / 2), int(y + h / 2))
+                cv2.rectangle(frame, top_left, bottom_right, (0, 255, 0), 2)
+
+                # Put text label and name above the rectangle
+                label_text = f"Label: {int(label)}"
+                name_text = f"Name: {name}"
+                cv2.putText(frame, label_text, (top_left[0], top_left[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                cv2.putText(frame, name_text, (top_left[0], top_left[1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
                 self.determine_target_tag(label)
                 
             prev_id = id
