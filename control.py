@@ -67,9 +67,11 @@ def main():
     
     camera_params = [313.34733040918235, 296.949736955647, 437.5629229985855, 421.367285388061]
 
-    task1 = Task1(drone)
-    task1_finished = False
-    task2 = Task2(drone)
+    #task1 = Task1(drone)
+    #task1_finished = False
+    host =  'localhost'
+    port = 8888
+    task2 = Task2(drone, host, port)
     task2_finished = False
 
     while True:
@@ -81,11 +83,11 @@ def main():
             tag_size=0.105
         )
 
-        if not task1_finished:
-            task1_finished = task1.run(tag_list, frame)
-            if task1_finished:
-                drone.send_rc_control(0, 0, 0, 0)
-        elif not task2_finished:
+        #if not task1_finished:
+        #    task1_finished = task1.run(tag_list, frame)
+        #    if task1_finished:
+        #        drone.send_rc_control(0, 0, 0, 0)
+        if not task2_finished:
             task2_finished = task2.run(tag_list, frame)
             if task2_finished:
                 drone.send_rc_control(0, 0, 0, 0)
