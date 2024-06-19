@@ -221,9 +221,8 @@ class Task2(StoppableThread):
         self.host = host
         self.port = port
         
-        self.image_receiver = ImageReceiver()  # Receive image from Tello.
+        #self.image_receiver = ImageReceiver()  # Receive image from Tello.
         self.detection_receiver = DetectionReceiver(  # Detect objects in received image.
-            self.image_receiver,
             self.img_size,
             self.conf_threshold,
             self.nms_threshold,
@@ -276,8 +275,9 @@ class Task2(StoppableThread):
 
     def run(self, frame, tag_list):
         
+        self.detection_receiver.update_image(frame)
+        
         threads = [
-            self.image_receiver,
             self.detection_receiver,
         ]
         for thread in threads:
