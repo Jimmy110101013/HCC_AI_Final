@@ -213,23 +213,25 @@ class Task1:
         return False  # Returning False until task1 is finished
             
 class Task2(StoppableThread):
-    def __init__(self, drone):
+    def __init__(self, drone, host, port):
         super().__init__()
-        self.img_size = 416       # Adjust as needed
-        self.conf_threshold = 0.5 # Adjust as needed
+        self.img_size = 640       # Adjust as needed
+        self.conf_threshold = 0.1 # Adjust as needed
         self.nms_threshold = 0.45 # Adjust as needed
+        self.host = host
+        self.port = port
         
-        self.state_receiver = StateReceiver()  # Receive state from Tello.
         self.image_receiver = ImageReceiver()  # Receive image from Tello.
         self.detection_receiver = DetectionReceiver(  # Detect objects in received image.
             self.image_receiver,
             self.img_size,
             self.conf_threshold,
             self.nms_threshold,
-            #url=f"http://{args.host}:{args.port}/api/yolov7"
+            url=f"http://{self.host}:{self.port}/api/yolov7"
         )
         
         self.drone = drone
+        self.task2_finished = False
         self.detector_url = None
         self.tracker = Tracker()
         self.target_tag_id = None
@@ -238,10 +240,10 @@ class Task2(StoppableThread):
 
     def determine_target_tag(self, detection_class):
         class_to_tag_map = {
-            'red'   : 3,  # If detection class is red, target AprilTag ID is 3
-            'yellow': 4,  # If detection class is yellow, target AprilTag ID is 4
-            'green' : 5,  # If detection class is green, target AprilTag ID is 5
-            'blue'  : 6   # If detection class is blue, target AprilTag ID is 6
+            'Gryffindor': 3,  # If detection class is red, target AprilTag ID is 3
+            'Hufflepuff': 4,  # If detection class is yellow, target AprilTag ID is 4
+            'Ravenclaw' : 5,  # If detection class is green, target AprilTag ID is 5
+            'Slytherin' : 6   # If detection class is blue, target AprilTag ID is 6
         }
         self.target_tag_id = class_to_tag_map.get(detection_class, None)
 
@@ -273,18 +275,22 @@ class Task2(StoppableThread):
         return is_finish
 
     def run(self, frame, tag_list):
+        
+        threads = [
+            self.image_receiver,
+            self.detection_receiver,
+        ]
+        for thread in threads:
+            thread.start()
+        
         prev_id = None
-        while not self.stopped():
-            id, detection = self.detection_receiver.get_result()
-            _, (state,) = self.state_receiver.get_result()
+        
+        while not self.task2_finished:
+            id, obj_detection = self.detection_receiver.get_result()
             if (id is None) or (id == prev_id):
                 continue
-            (_, bboxes, scores, labels, names) = detection
-            print("-" * 80)
-            print("Battery: %d%%" % state["bat"])
-            print("X Speed: %.1f" % state["vgx"])
-            print("Y Speed: %.1f" % state["vgy"])
-            print("Z Speed: %.1f" % state["vgz"])
+            (_, bboxes, scores, labels, names) = obj_detection
+
             for bbox, score, label, name in zip(bboxes, scores, labels, names):
                 # center (x, y) and box size (w, h)
                 x, y, w, h = bbox
@@ -307,7 +313,43 @@ class Task2(StoppableThread):
             if self.target_tag_id is None:
                 print("No target tag ID determined.")
                 return False
-        
+            
+            elif self.target_tag_id == 3 :
+                print("move_to_gate send command -- left 40")
+                self.drone.move_left(40)  # Move left by 40
+                time.sleep(1)
+                print("move_to_gate send command -- forward 30")
+                self.drone.move_forward(30)  # Move forward by 30
+                self.task2_finished = True
+                return True
+            
+            elif self.target_tag_id == 4 :
+                print("move_to_gate send command -- left 20")
+                self.drone.move_left(20)  # Move left by 20
+                time.sleep(1)
+                print("move_to_gate send command -- forward 30")
+                self.drone.move_forward(30)  # Move forward by 30
+                self.task2_finished = True
+                return True
+            elif self.target_tag_id == 5 :
+                print("move_to_gate send command -- right 20")
+                self.drone.move_right(20)  # Move right by 20
+                time.sleep(1)
+                print("move_to_gate send command -- forward 30")
+                self.drone.move_forward(30)  # Move forward by 30
+                self.task2_finished = True
+                return True
+            elif self.target_tag_id == 6 :
+                print("move_to_gate send command -- right 40")
+                self.drone.move_right(40)  # Move right by 40
+                time.sleep(1)
+                print("move_to_gate send command -- forward 30")
+                self.drone.move_forward(30)  # Move forward by 30
+                self.task2_finished = True
+                return True
+            
+                
+        '''
             frame = self.drone.get_frame_read().frame
             frame_size = frame.shape[:2]
             detections = []
@@ -323,3 +365,4 @@ class Task2(StoppableThread):
 
             is_finish = self.extract_and_match_tag(confirmed_tracks, self.target_tag_id)
             return is_finish
+        '''
